@@ -1,0 +1,14 @@
+{
+  "name": "api",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
