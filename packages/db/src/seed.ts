@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { eq } from "drizzle-orm";
 import { db } from "./index";
+import bcrypt from "bcryptjs";
 import {
     files,
     users,
@@ -14,6 +15,7 @@ dotenv.config({
 
 async function seed() {
     console.log("🌱 Seeding database...");
+    const passwordHash = await bcrypt.hash("password123", 10);
 
     // Create user
     const [user] = await db
@@ -21,6 +23,7 @@ async function seed() {
         .values({
             email: "anurag@example.com",
             name: "Anurag",
+            passwordHash,
         })
         .onConflictDoNothing()
         .returning();

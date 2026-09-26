@@ -7,11 +7,16 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.5.1",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@repo/db": "workspace:*"
+    "@repo/db": "workspace:*",
+    "bcryptjs": "^3.0.3",
+    "drizzle-orm": "0.45.2",
+    "jsonwebtoken": "^9.0.3",
+    "zod": "^4.6.5"
   }
 }

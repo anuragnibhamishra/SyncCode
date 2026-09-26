@@ -8,19 +8,6 @@ import {
   primaryKey,
 } from "drizzle-orm/pg-core";
 
-import dotenv from "dotenv";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-
-dotenv.config({
-  path: "../../.env",
-});
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-export const db = drizzle(pool);
 
 export const workspaceRole = pgEnum("workspace_role", [
   "OWNER",
@@ -40,6 +27,8 @@ export const users = pgTable("users", {
   }).notNull(),
 
   avatar: text("avatar"),
+
+  passwordHash: text("password_hash").notNull(),
 
   createdAt: timestamp("created_at", {
     withTimezone: true,
@@ -135,5 +124,3 @@ export const files = pgTable("files", {
     .defaultNow()
     .notNull(),
 });
-
-export * from "../schema";
