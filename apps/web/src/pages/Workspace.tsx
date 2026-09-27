@@ -76,7 +76,7 @@ function WorkspacePage({ id, onNavigate }: WorkspacePageProps) {
                 <dd className="m-0"><span className="inline-flex bg-emerald-100 px-2.5 py-1 font-mono text-[11px] text-emerald-900">{workspace.role}</span></dd>
               </div>
             </dl>
-            <IDELayout />
+            <IDELayout key={workspace.id} workspaceId={workspace.id} />
           </>
         ) : null}
       </section>

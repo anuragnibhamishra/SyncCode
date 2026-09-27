@@ -15,3 +15,12 @@ export interface Workspace {
 export interface WorkspaceDetails extends Workspace {
   ownerId: string;
 }
+
+export interface WorkspaceFile {
+  id: string;
+  workspaceId: string;
+  parentId: string | null;
+  name: string;
+  type: string;
+  content: string | null;
+}

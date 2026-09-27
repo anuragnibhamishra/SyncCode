@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage } from "node:http";
-import { db, users, workspaceMembers, workspaces } from "@repo/db";
-import { eq , and } from "drizzle-orm";
+import { db, files, users, workspaceMembers, workspaces } from "@repo/db";
+import { and, asc, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -35,10 +35,50 @@ async function parseBody(req: IncomingMessage) {
   }
 }
 
+async function getWorkspaceMembership(userId: string, workspaceId: string) {
+  const [membership] = await db
+    .select({ role: workspaceMembers.role })
+    .from(workspaceMembers)
+    .where(
+      and(
+        eq(workspaceMembers.workspaceId, workspaceId),
+        eq(workspaceMembers.userId, userId),
+      ),
+    )
+    .limit(1);
+
+  return membership ?? null;
+}
+
+async function getFileMembership(userId: string, fileId: string) {
+  const [file] = await db
+    .select({
+      id: files.id,
+      workspaceId: files.workspaceId,
+      type: files.type,
+      role: workspaceMembers.role,
+    })
+    .from(files)
+    .innerJoin(
+      workspaceMembers,
+      eq(workspaceMembers.workspaceId, files.workspaceId),
+    )
+    .where(
+      and(
+        eq(files.id, fileId),
+        eq(workspaceMembers.userId, userId),
+      ),
+    )
+    .limit(1);
+
+  return file ?? null;
+}
+
 const PORT = 3000;
 const WEB_ORIGIN = "http://localhost:5173";
 
 const server = createServer(async (req, res) => {
+  const requestPath = new URL(req.url ?? "/", "http://localhost").pathname;
   res.setHeader("Content-Type", "application/json");
 
   if (req.headers.origin === WEB_ORIGIN) {
@@ -48,7 +88,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     res.writeHead(204);
     res.end();
@@ -418,6 +458,190 @@ const server = createServer(async (req, res) => {
           error: "Failed to create workspace",
         }),
       );
+    }
+
+    return;
+  }
+
+  const workspaceFilesMatch = requestPath.match(/^\/workspaces\/([^/]+)\/files$/);
+
+  if (
+    workspaceFilesMatch &&
+    (req.method === "GET" || req.method === "POST")
+  ) {
+    try {
+      const workspaceIdResult = z.string().uuid().safeParse(workspaceFilesMatch[1]);
+      if (!workspaceIdResult.success) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid workspace ID" }));
+        return;
+      }
+
+      const userId = await getAuthenticatedUserId(req.headers.cookie);
+      if (!userId) {
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: "Not authenticated" }));
+        return;
+      }
+
+      const workspaceId = workspaceIdResult.data;
+      const membership = await getWorkspaceMembership(userId, workspaceId);
+      if (!membership) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: "Workspace not found" }));
+        return;
+      }
+
+      if (req.method === "GET") {
+        const result = await db
+          .select({
+            id: files.id,
+            workspaceId: files.workspaceId,
+            parentId: files.parentId,
+            name: files.name,
+            type: files.type,
+            content: files.content,
+          })
+          .from(files)
+          .where(eq(files.workspaceId, workspaceId))
+          .orderBy(asc(files.name));
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ files: result }));
+        return;
+      }
+
+      if (membership.role === "VIEWER") {
+        res.writeHead(403);
+        res.end(JSON.stringify({ error: "You do not have permission to create files" }));
+        return;
+      }
+
+      const schema = z.object({
+        name: z.string().trim().min(1).max(255),
+        parentId: z.string().uuid().nullable().optional(),
+      });
+      const result = schema.safeParse(await parseBody(req));
+      if (!result.success) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid file details" }));
+        return;
+      }
+
+      const parentId = result.data.parentId ?? null;
+      if (parentId) {
+        const [parentFolder] = await db
+          .select({ id: files.id })
+          .from(files)
+          .where(
+            and(
+              eq(files.id, parentId),
+              eq(files.workspaceId, workspaceId),
+              eq(files.type, "folder"),
+            ),
+          )
+          .limit(1);
+
+        if (!parentFolder) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "Parent folder not found" }));
+          return;
+        }
+      }
+
+      const [file] = await db
+        .insert(files)
+        .values({
+          workspaceId,
+          parentId,
+          name: result.data.name,
+          type: "file",
+          content: "",
+        })
+        .returning({
+          id: files.id,
+          workspaceId: files.workspaceId,
+          parentId: files.parentId,
+          name: files.name,
+          type: files.type,
+          content: files.content,
+        });
+
+      res.writeHead(201);
+      res.end(JSON.stringify({ file }));
+    } catch (error) {
+      console.error(error);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: "Failed to load or create files" }));
+    }
+
+    return;
+  }
+
+  const fileMatch = requestPath.match(/^\/files\/([^/]+)$/);
+  if (fileMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+    try {
+      const fileIdResult = z.string().uuid().safeParse(fileMatch[1]);
+      if (!fileIdResult.success) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid file ID" }));
+        return;
+      }
+
+      const userId = await getAuthenticatedUserId(req.headers.cookie);
+      if (!userId) {
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: "Not authenticated" }));
+        return;
+      }
+
+      const file = await getFileMembership(userId, fileIdResult.data);
+      if (!file || file.type !== "file") {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: "File not found" }));
+        return;
+      }
+
+      if (file.role === "VIEWER") {
+        res.writeHead(403);
+        res.end(JSON.stringify({ error: "You do not have permission to modify files" }));
+        return;
+      }
+
+      if (req.method === "PATCH") {
+        const schema = z.object({ content: z.string() });
+        const result = schema.safeParse(await parseBody(req));
+        if (!result.success) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "Invalid file content" }));
+          return;
+        }
+
+        const [updatedFile] = await db
+          .update(files)
+          .set({ content: result.data.content, updatedAt: new Date() })
+          .where(eq(files.id, file.id))
+          .returning({
+            id: files.id,
+            workspaceId: files.workspaceId,
+            parentId: files.parentId,
+            name: files.name,
+            type: files.type,
+            content: files.content,
+          });
+
+        res.writeHead(200);
+        res.end(JSON.stringify({ file: updatedFile }));
+        return;
+      }
+
+      await db.delete(files).where(eq(files.id, file.id));
+      res.writeHead(200);
+      res.end(JSON.stringify({ message: "File deleted" }));
+    } catch (error) {
+      console.error(error);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: "Failed to update or delete file" }));
     }
 
     return;
