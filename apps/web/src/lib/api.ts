@@ -1,0 +1,37 @@
+const API_URL = "http://localhost:3000";
+
+export class ApiError extends Error {
+    readonly status: number;
+
+    constructor(message: string, status: number) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status;
+    }
+}
+
+export function getErrorMessage(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
+}
+
+export async function apiFetch<T>(
+    path: string,
+    options: RequestInit = {},
+): Promise<T> {
+    const response = await fetch(`${API_URL}${path}`, {
+        ...options,
+        credentials: "include",
+        headers: {
+            "Content-Type": "application/json",
+            ...options.headers,
+        },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new ApiError(data.error ?? "Something went wrong", response.status);
+    }
+
+    return data;
+}

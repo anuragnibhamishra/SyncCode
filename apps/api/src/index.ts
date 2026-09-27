@@ -36,9 +36,24 @@ async function parseBody(req: IncomingMessage) {
 }
 
 const PORT = 3000;
+const WEB_ORIGIN = "http://localhost:5173";
 
 const server = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json");
+
+  if (req.headers.origin === WEB_ORIGIN) {
+    res.setHeader("Access-Control-Allow-Origin", WEB_ORIGIN);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Vary", "Origin");
+  }
+
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.writeHead(204);
+    res.end();
+    return;
+  }
 
   if (req.method === "POST" && req.url === "/auth/register") {
     try {
